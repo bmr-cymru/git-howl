@@ -1,0 +1,155 @@
+.TH GIT-HOWL 1 "October 2025" "git-howl 2.0" "User Commands"
+.SH NAME
+git-howl \- find commits made at unsociable hours
+.SH SYNOPSIS
+.B git-howl
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B git-howl
+(short for "how late???") analyzes your Git commit history to find commits made
+during unsociable hours. Because sometimes we need to see just how bad our
+work-life balance really is.
+.PP
+By default, it identifies commits made between midnight (00:00) and 6 AM (06:00)
+on weekdays. The time range and weekend behavior are fully configurable.
+.SH OPTIONS
+.TP
+.BR \-s ", " \-\-start " \fIHOUR\fR"
+Start of unsociable hours (0-23). Default: 0
+.TP
+.BR \-e ", " \-\-end " \fIHOUR\fR"
+End of unsociable hours (0-23). Default: 6
+.br
+Note: Supports wrap-around ranges (e.g., 22-2 means 22:00-01:59)
+.TP
+.BR \-w ", " \-\-weekends
+Include weekends as unsociable (using the same hour range)
+.TP
+.BR \-W ", " \-\-weekends-all-day
+Count ALL hours on weekends as unsociable
+.TP
+.BR \-S ", " \-\-stats
+Show statistics summary including total commits, unsociable commits, and
+percentage. Provides helpful judgment about your work-life balance.
+.TP
+.BR \-f ", " \-\-full
+Show full commit details instead of just the commit hash, author, and date
+.TP
+.BR \-n ", " \-\-no-color
+Disable colored output
+.TP
+.BR \-a ", " \-\-author " \fIPATTERN\fR"
+Filter commits by author (grep pattern)
+.TP
+.BR \-\-since " \fIDATE\fR"
+Only show commits after the specified date. Accepts formats like "2 weeks ago",
+"2024-01-01", "yesterday", etc.
+.TP
+.BR \-\-until " \fIDATE\fR"
+Only show commits before the specified date
+.TP
+.BR \-h ", " \-\-help
+Display help message and exit
+.TP
+.BR \-v ", " \-\-version
+Display version information and exit
+.SH EXAMPLES
+.PP
+Find commits made between midnight and 6 AM on weekdays (default behavior):
+.RS
+.B git-howl
+.RE
+.PP
+Find late-night commits (22:00-07:00):
+.RS
+.B git-howl \-s 22 \-e 7
+.RE
+.PP
+Include all weekend hours and show statistics:
+.RS
+.B git-howl \-W \-S
+.RE
+.PP
+Check last month's late-night commits with full details:
+.RS
+.B git-howl \-s 23 \-e 6 \-\-since "1 month ago" \-f
+.RE
+.PP
+Find unsociable commits by a specific author:
+.RS
+.B git-howl \-a "John Doe" \-S
+.RE
+.PP
+Analyze work habits over the last quarter:
+.RS
+.B git-howl \-s 0 \-e 9 \-w \-\-since "3 months ago" \-S
+.RE
+.SH OUTPUT
+.PP
+By default,
+.B git-howl
+outputs one line per unsociable commit showing:
+.RS
+.IP \(bu 2
+Commit hash (abbreviated, in red)
+.IP \(bu 2
+Author line (in blue)
+.IP \(bu 2
+Commit date and time (in green)
+.RE
+.PP
+With
+.BR \-f / \-\-full ,
+the complete commit information is displayed.
+.PP
+With
+.BR \-S / \-\-stats ,
+a summary is shown including:
+.RS
+.IP \(bu 2
+Total number of commits analyzed
+.IP \(bu 2
+Number of unsociable commits found
+.IP \(bu 2
+Percentage of unsociable commits
+.IP \(bu 2
+A judgment about your work-life balance
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Unsociable commits were found
+.TP
+.B 1
+No unsociable commits were found, or an error occurred
+.SH NOTES
+.PP
+The script uses
+.BR git-log (1)
+with the
+.B \-\-date=iso
+format to parse commit dates. Weekend detection uses the system's
+.BR date (1)
+command.
+.PP
+Hour ranges can wrap around midnight. For example,
+.B \-s 22 \-e 2
+means 22:00, 23:00, 00:00, and 01:00.
+.PP
+Colors are automatically disabled when output is not a TTY (e.g., when piping to a file).
+.SH AUTHOR
+Enhanced from a simple grep one-liner to a full-featured tool for analyzing your
+questionable commit timing habits.
+.SH SEE ALSO
+.BR git (1),
+.BR git-log (1),
+.BR date (1)
+.SH BUGS
+May cause existential crises when you realize how many 3 AM commits you've made.
+.PP
+Report bugs by reflecting on your life choices. Or file a GitHub issue:
+.PP
+.UR https://\:github.com/bmr-cymru/git-howl
+git-howl project page
+.UE
+

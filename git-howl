@@ -1,0 +1,275 @@
+#!/bin/bash
+
+# git-howl: Find commits made at unsociable hours
+# Because sometimes we need to see just how bad our work-life balance is
+
+VERSION="2.0"
+
+# Default configuration
+START_HOUR=0
+END_HOUR=6
+INCLUDE_WEEKENDS=false
+WEEKEND_ALL_DAY=false
+SHOW_STATS=false
+SHOW_FULL_COMMIT=false
+COLORIZE=true
+AUTHOR_FILTER=""
+SINCE=""
+UNTIL=""
+
+# Color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+usage() {
+    cat << EOF
+Usage: git-howl [OPTIONS]
+
+Find commits made at unsociable hours (because your git log shouldn't judge you).
+
+OPTIONS:
+    -s, --start HOUR        Start of unsociable hours (0-23, default: 0)
+    -e, --end HOUR          End of unsociable hours (0-23, default: 6)
+    -w, --weekends          Include weekends as unsociable
+    -W, --weekends-all-day  Count ALL hours on weekends as unsociable
+    -S, --stats             Show statistics summary
+    -f, --full              Show full commit details (not just dates)
+    -n, --no-color          Disable colored output
+    -a, --author PATTERN    Filter by author (grep pattern)
+    --since DATE            Only commits after date (e.g., "2 weeks ago")
+    --until DATE            Only commits before date
+    -h, --help              Show this help message
+    -v, --version           Show version
+
+EXAMPLES:
+    git-howl                          # Default: 00:00-06:00 weekdays
+    git-howl -s 22 -e 7               # 22:00-07:00 (late night to early morning)
+    git-howl -w                       # Include weekends midnight-6am
+    git-howl -W                       # All weekend hours
+    git-howl -s 0 -e 9 -w -S          # 00:00-09:00 + weekends, with stats
+    git-howl -a "John Doe" --since "1 month ago"
+    git-howl -s 23 -e 2 -f            # Show full commits for 23:00-02:00
+
+EOF
+    exit 0
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -s|--start)
+            START_HOUR="$2"
+            shift 2
+            ;;
+        -e|--end)
+            END_HOUR="$2"
+            shift 2
+            ;;
+        -w|--weekends)
+            INCLUDE_WEEKENDS=true
+            shift
+            ;;
+        -W|--weekends-all-day)
+            INCLUDE_WEEKENDS=true
+            WEEKEND_ALL_DAY=true
+            shift
+            ;;
+        -S|--stats)
+            SHOW_STATS=true
+            shift
+            ;;
+        -f|--full)
+            SHOW_FULL_COMMIT=true
+            shift
+            ;;
+        -n|--no-color)
+            COLORIZE=false
+            shift
+            ;;
+        -a|--author)
+            AUTHOR_FILTER="$2"
+            shift 2
+            ;;
+        --since)
+            SINCE="$2"
+            shift 2
+            ;;
+        --until)
+            UNTIL="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -v|--version)
+            echo "git-howl version $VERSION"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
+
+# Validate hours
+if [[ ! "$START_HOUR" =~ ^[0-9]+$ ]] || [ "$START_HOUR" -lt 0 ] || [ "$START_HOUR" -gt 23 ]; then
+    echo "Error: Start hour must be between 0 and 23"
+    exit 1
+fi
+
+if [[ ! "$END_HOUR" =~ ^[0-9]+$ ]] || [ "$END_HOUR" -lt 0 ] || [ "$END_HOUR" -gt 23 ]; then
+    echo "Error: End hour must be between 0 and 23"
+    exit 1
+fi
+
+# Disable colors if requested or not on a tty
+if [ "$COLORIZE" = false ] || [ ! -t 1 ]; then
+    RED=''
+    YELLOW=''
+    BLUE=''
+    GREEN=''
+    CYAN=''
+    NC=''
+fi
+
+# Build git log command
+GIT_CMD="git log --pretty=fuller --date=iso"
+[ -n "$AUTHOR_FILTER" ] && GIT_CMD="$GIT_CMD --author=$AUTHOR_FILTER"
+[ -n "$SINCE" ] && GIT_CMD="$GIT_CMD --since=\"$SINCE\""
+[ -n "$UNTIL" ] && GIT_CMD="$GIT_CMD --until=\"$UNTIL\""
+
+# Function to check if hour is in unsociable range
+is_unsociable_hour() {
+    local hour=$1
+    
+    if [ "$END_HOUR" -gt "$START_HOUR" ]; then
+        # Normal range (e.g., 0-6)
+        [ "$hour" -ge "$START_HOUR" ] && [ "$hour" -lt "$END_HOUR" ]
+    else
+        # Wrap-around range (e.g., 22-2 means 22,23,0,1)
+        [ "$hour" -ge "$START_HOUR" ] || [ "$hour" -lt "$END_HOUR" ]
+    fi
+}
+
+# Function to check if day is weekend
+is_weekend() {
+    local day_name=$1
+    [[ "$day_name" == "Sat" || "$day_name" == "Sun" ]]
+}
+
+# Process git log
+unsociable_count=0
+total_count=0
+current_commit=""
+current_hash=""
+current_author=""
+current_date=""
+is_current_unsociable=false
+
+while IFS= read -r line; do
+    if [[ "$line" =~ ^commit\ ([a-f0-9]+) ]]; then
+        # New commit found - output previous if it was unsociable
+        if [ "$is_current_unsociable" = true ] && [ -n "$current_commit" ]; then
+            if [ "$SHOW_FULL_COMMIT" = true ]; then
+                echo -e "${YELLOW}$current_commit${NC}"
+            else
+                echo -e "${RED}$current_hash${NC} ${BLUE}$current_author${NC} ${GREEN}$current_date${NC}"
+            fi
+            ((unsociable_count++))
+        fi
+        
+        # Start new commit
+        current_hash="${BASH_REMATCH[1]:0:7}"
+        current_commit="$line"
+        is_current_unsociable=false
+        ((total_count++))
+    elif [[ "$line" =~ ^Author: ]]; then
+        current_author="$line"
+        current_commit="$current_commit"$'\n'"$line"
+    elif [[ "$line" =~ ^CommitDate:\ +(.+) ]]; then
+        current_date="${BASH_REMATCH[1]}"
+        current_commit="$current_commit"$'\n'"$line"
+        
+        # Parse the date
+        # Format: YYYY-MM-DD HH:MM:SS +ZZZZ
+        if [[ "$current_date" =~ ([0-9]{4})-([0-9]{2})-([0-9]{2})\ ([0-9]{2}):([0-9]{2}):([0-9]{2}) ]]; then
+            year="${BASH_REMATCH[1]}"
+            month="${BASH_REMATCH[2]}"
+            day="${BASH_REMATCH[3]}"
+            hour="${BASH_REMATCH[4]}"
+            
+            # Get day of week (using date command)
+            day_of_week=$(date -d "$year-$month-$day" +%a 2>/dev/null)
+            
+            # Check if this is an unsociable hour
+            hour_int=$((10#$hour))  # Convert to base 10 to handle leading zeros
+            
+            if is_weekend "$day_of_week"; then
+                if [ "$INCLUDE_WEEKENDS" = true ]; then
+                    if [ "$WEEKEND_ALL_DAY" = true ]; then
+                        # All hours on weekend are unsociable
+                        is_current_unsociable=true
+                    elif is_unsociable_hour "$hour_int"; then
+                        # Weekend + unsociable hour
+                        is_current_unsociable=true
+                    fi
+                elif is_unsociable_hour "$hour_int"; then
+                    # Weekday unsociable hour on weekend (still counts if not in weekend mode)
+                    is_current_unsociable=true
+                fi
+            else
+                # Weekday
+                if is_unsociable_hour "$hour_int"; then
+                    is_current_unsociable=true
+                fi
+            fi
+        fi
+    else
+        # Accumulate commit message lines for full display
+        if [ "$SHOW_FULL_COMMIT" = true ]; then
+            current_commit="$current_commit"$'\n'"$line"
+        fi
+    fi
+done < <(eval "$GIT_CMD")
+
+# Don't forget the last commit
+if [ "$is_current_unsociable" = true ] && [ -n "$current_commit" ]; then
+    if [ "$SHOW_FULL_COMMIT" = true ]; then
+        echo -e "${YELLOW}$current_commit${NC}"
+    else
+        echo -e "${RED}$current_hash${NC} ${BLUE}$current_author${NC} ${GREEN}$current_date${NC}"
+    fi
+    ((unsociable_count++))
+fi
+
+# Show statistics if requested
+if [ "$SHOW_STATS" = true ]; then
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Statistics${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "Total commits:      ${GREEN}$total_count${NC}"
+    echo -e "Unsociable commits: ${RED}$unsociable_count${NC}"
+    
+    if [ "$total_count" -gt 0 ]; then
+        percentage=$(awk "BEGIN {printf \"%.1f\", ($unsociable_count / $total_count) * 100}")
+        echo -e "Percentage:         ${YELLOW}$percentage%${NC}"
+        
+        if (( $(echo "$percentage > 20" | bc -l) )); then
+            echo -e "\n${YELLOW}⚠  You might want to consider some work-life balance! ⚠${NC}"
+        elif (( $(echo "$percentage > 10" | bc -l) )); then
+            echo -e "\n${BLUE}🌙 Burning the midnight oil occasionally...${NC}"
+        else
+            echo -e "\n${GREEN}✓ Looking pretty healthy!${NC}"
+        fi
+    fi
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+fi
+
+# Exit with status indicating if any unsociable commits were found
+[ "$unsociable_count" -gt 0 ]
