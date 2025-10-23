@@ -58,9 +58,20 @@ EOF
     exit 0
 }
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
+# Parse command line arguments using getopt
+PARSED=$(getopt -o s:e:wWSfna:hv --long start:,end:,weekends,weekends-all-day,stats,full,no-color,author:,since:,until:,help,version -n 'git-howl' -- "$@")
+
+if [ $? -ne 0 ]; then
+    echo "Error parsing arguments. Use -h for help."
+    exit 1
+fi
+
+# Use eval to handle quoting properly
+eval set -- "$PARSED"
+
+# Process parsed arguments
+while true; do
+    case "$1" in
         -s|--start)
             START_HOUR="$2"
             shift 2
@@ -109,12 +120,23 @@ while [[ $# -gt 0 ]]; do
             echo "git-howl version $VERSION"
             exit 0
             ;;
+        --)
+            shift
+            break
+            ;;
         *)
-            echo "Unknown option: $1"
-            usage
+            echo "Programming error in argument parsing"
+            exit 1
             ;;
     esac
 done
+
+# Check for any remaining non-option arguments
+if [ $# -gt 0 ]; then
+    echo "Error: Unexpected argument(s): $*"
+    echo "Use -h for help."
+    exit 1
+fi
 
 # Validate hours
 if [[ ! "$START_HOUR" =~ ^[0-9]+$ ]] || [ "$START_HOUR" -lt 0 ] || [ "$START_HOUR" -gt 23 ]; then
