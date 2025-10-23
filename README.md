@@ -91,7 +91,7 @@ Then run it as:
 $ git howl
 ```
 
-If you really want `man git howl` to work then just:
+If you want `man git howl` or `git howl --help` to work then just:
 
 ```bash
 $ mkdir -p ~/.local/share/man/man1
